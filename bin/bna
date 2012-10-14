@@ -5,224 +5,224 @@ import sys
 from argparse import ArgumentParser
 from binascii import hexlify, unhexlify
 try:
-	from configparser import ConfigParser
+    from configparser import ConfigParser
 except ImportError:
-	from ConfigParser import ConfigParser
+    from ConfigParser import ConfigParser
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir))
 import bna
 
 class Authenticator(object):
-	def __init__(self, args):
-		arguments = ArgumentParser(prog="bna")
-		arguments.add_argument("-n", "--new", action="store_true", dest="new", help="request a new authenticator")
-		arguments.add_argument("--config", type=str, dest="config", help="specify config file to use")
-		arguments.add_argument("-d", "--delete", action="store_true", dest="delete", help="delete a stored serial and its matching secret")
-		arguments.add_argument("-i", "--interactive", action="store_true", dest="update", help="interactive mode: updates the token as soon as it expires")
-		arguments.add_argument("-l", "--list", action="store_true", dest="list", help="list all your active serials and exit")
-		arguments.add_argument("-r", "--region", type=str, dest="region", default="US", help="desired region for new authenticators")
-		arguments.add_argument("--restore", nargs=2, type=str, dest="restore", metavar=("SERIAL", "CODE"), help="restores an existing authenticator")
-		arguments.add_argument("--restore-code", action="store_true", dest="restorecode", help="prints a serial's restore code and exit")
-		arguments.add_argument("--set-default", action="store_true", dest="setdefault", help="set authenticator as default (also works when requesting a new authenticator)")
-		arguments.add_argument("-v", "--version", action="version", version="bna %s" % (bna.__version__))
-		arguments.add_argument("serial", nargs="?")
-		self.args = arguments.parse_args(args)
+    def __init__(self, args):
+        arguments = ArgumentParser(prog="bna")
+        arguments.add_argument("-n", "--new", action="store_true", dest="new", help="request a new authenticator")
+        arguments.add_argument("--config", type=str, dest="config", help="specify config file to use")
+        arguments.add_argument("-d", "--delete", action="store_true", dest="delete", help="delete a stored serial and its matching secret")
+        arguments.add_argument("-i", "--interactive", action="store_true", dest="update", help="interactive mode: updates the token as soon as it expires")
+        arguments.add_argument("-l", "--list", action="store_true", dest="list", help="list all your active serials and exit")
+        arguments.add_argument("-r", "--region", type=str, dest="region", default="US", help="desired region for new authenticators")
+        arguments.add_argument("--restore", nargs=2, type=str, dest="restore", metavar=("SERIAL", "CODE"), help="restores an existing authenticator")
+        arguments.add_argument("--restore-code", action="store_true", dest="restorecode", help="prints a serial's restore code and exit")
+        arguments.add_argument("--set-default", action="store_true", dest="setdefault", help="set authenticator as default (also works when requesting a new authenticator)")
+        arguments.add_argument("-v", "--version", action="version", version="bna %s" % (bna.__version__))
+        arguments.add_argument("serial", nargs="?")
+        self.args = arguments.parse_args(args)
 
-		self.config = ConfigParser()
-		try:
-			self.config.read([self.configFile()])
-		except Exception as e:
-			self.error("Could not parse config file %r: %s" % (self.configFile(), e))
+        self.config = ConfigParser()
+        try:
+            self.config.read([self.configFile()])
+        except Exception as e:
+            self.error("Could not parse config file %r: %s" % (self.configFile(), e))
 
-		# Are we requesting a new authenticator?
-		if self.args.new:
-			self.queryNewAuthenticator(args)
-			exit()
+        # Are we requesting a new authenticator?
+        if self.args.new:
+            self.queryNewAuthenticator(args)
+            exit()
 
-		if self.args.delete:
-			if not self.args.serial:
-				self.error("You must provide a serial with --delete")
-			self.deleteSerial(self.args.serial)
-			exit()
+        if self.args.delete:
+            if not self.args.serial:
+                self.error("You must provide a serial with --delete")
+            self.deleteSerial(self.args.serial)
+            exit()
 
-		if self.args.list:
-			self.listSerials()
-			exit()
+        if self.args.list:
+            self.listSerials()
+            exit()
 
-		if self.args.restore:
-			self.restoreSerial(*self.args.restore)
-			exit()
+        if self.args.restore:
+            self.restoreSerial(*self.args.restore)
+            exit()
 
-		if not self.args.serial:
-			serial = self.getDefaultSerial()
-			if serial is None:
-				if self._serials():
-					self.error("You do not have a default serial set. must provide an authenticator serial or set a default one with 'bna --set-default'.")
-				else:
-					self.error("You do not have any configured authenticators. Create a new one with 'bna --new' or try 'bna --help' for more information")
-		else:
-			serial = self.args.serial
-		serial = bna.normalizeSerial(serial)
+        if not self.args.serial:
+            serial = self.getDefaultSerial()
+            if serial is None:
+                if self._serials():
+                    self.error("You do not have a default serial set. must provide an authenticator serial or set a default one with 'bna --set-default'.")
+                else:
+                    self.error("You do not have any configured authenticators. Create a new one with 'bna --new' or try 'bna --help' for more information")
+        else:
+            serial = self.args.serial
+        serial = bna.normalizeSerial(serial)
 
-		# Are we setting a serial as default?
-		if self.args.setdefault:
-			self.setDefaultSerial(serial)
+        # Are we setting a serial as default?
+        if self.args.setdefault:
+            self.setDefaultSerial(serial)
 
-		# Get the secret from the keyring
-		self._secret = self.getSecret(serial)
-		if sys.version_info < (2, 7):
-			self._secret = self._secret.decode("utf-8")
-		if not self._secret:
-			self.error("No such serial: %r" % (serial))
-		self._secret = unhexlify(self._secret)
+        # Get the secret from the keyring
+        self._secret = self.getSecret(serial)
+        if sys.version_info < (2, 7):
+            self._secret = self._secret.decode("utf-8")
+        if not self._secret:
+            self.error("No such serial: %r" % (serial))
+        self._secret = unhexlify(self._secret)
 
-		# Print the restore code if the user asked for it
-		if self.args.restorecode:
-			self.printRestoreCode(serial)
-			exit()
+        # Print the restore code if the user asked for it
+        if self.args.restorecode:
+            self.printRestoreCode(serial)
+            exit()
 
-		# otherwise print the token
-		if self.args.update:
-			self.runLive()
-		else:
-			token, timeRemaining = bna.getToken(secret=self._secret)
-			print(token)
+        # otherwise print the token
+        if self.args.update:
+            self.runLive()
+        else:
+            token, timeRemaining = bna.getToken(secret=self._secret)
+            print(token)
 
-	def _serials(self):
-		return [x for x in self.config.sections() if x != "bna"]
+    def _serials(self):
+        return [x for x in self.config.sections() if x != "bna"]
 
-	def error(self, txt):
-		sys.stderr.write("Error: %s\n" % (txt))
-		exit(1)
+    def error(self, txt):
+        sys.stderr.write("Error: %s\n" % (txt))
+        exit(1)
 
-	def addSerial(self, serial, secret):
-		self.setSecret(serial, secret)
+    def addSerial(self, serial, secret):
+        self.setSecret(serial, secret)
 
-		# We set the serial as default if we don't have one set already
-		# Otherwise, we check for --set-default
-		if self.args.setdefault or not self.getDefaultSerial():
-			self.setDefaultSerial(serial)
+        # We set the serial as default if we don't have one set already
+        # Otherwise, we check for --set-default
+        if self.args.setdefault or not self.getDefaultSerial():
+            self.setDefaultSerial(serial)
 
-	def deleteSerial(self, serial):
-		serial = bna.normalizeSerial(serial)
-		if not self.config.has_section(serial):
-			self.error("No such serial: %r" % (serial))
-		self.config.remove_section(serial)
+    def deleteSerial(self, serial):
+        serial = bna.normalizeSerial(serial)
+        if not self.config.has_section(serial):
+            self.error("No such serial: %r" % (serial))
+        self.config.remove_section(serial)
 
-		# If it's the default serial, remove that
-		if serial == self.getDefaultSerial():
-			self.config.remove_option("bna", "default_serial")
+        # If it's the default serial, remove that
+        if serial == self.getDefaultSerial():
+            self.config.remove_option("bna", "default_serial")
 
-		self.writeConfig()
-		print("Successfully deleted serial %s" % (bna.prettifySerial(serial)))
+        self.writeConfig()
+        print("Successfully deleted serial %s" % (bna.prettifySerial(serial)))
 
-	def restoreSerial(self, serial, code):
-		serial = bna.normalizeSerial(serial)
-		if self.config.has_option(serial, "secret"):
-			self.error("A secret already exists for this serial. Try deleting it first with bna --delete %s" % (serial))
+    def restoreSerial(self, serial, code):
+        serial = bna.normalizeSerial(serial)
+        if self.config.has_option(serial, "secret"):
+            self.error("A secret already exists for this serial. Try deleting it first with bna --delete %s" % (serial))
 
-		secret = bna.restore(serial, code)
-		self.addSerial(serial, hexlify(secret).decode("ascii"))
-		print("Restored serial %s" % (bna.prettifySerial(serial)))
+        secret = bna.restore(serial, code)
+        self.addSerial(serial, hexlify(secret).decode("ascii"))
+        print("Restored serial %s" % (bna.prettifySerial(serial)))
 
-	def listSerials(self):
-		default = self.getDefaultSerial()
-		total = 0
-		for serial in self._serials():
-			if serial == default:
-				print("%s (default)" % (serial))
-			else:
-				print(serial)
-			total += 1
+    def listSerials(self):
+        default = self.getDefaultSerial()
+        total = 0
+        for serial in self._serials():
+            if serial == default:
+                print("%s (default)" % (serial))
+            else:
+                print(serial)
+            total += 1
 
-		print("%i items" % (total))
+        print("%i items" % (total))
 
-	def queryNewAuthenticator(self, args):
-		try:
-			serial, secret = bna.requestNewSerial(self.args.region)
-		except bna.HTTPError as e:
-			self.error("Could not connect: %s" % (e))
+    def queryNewAuthenticator(self, args):
+        try:
+            serial, secret = bna.requestNewSerial(self.args.region)
+        except bna.HTTPError as e:
+            self.error("Could not connect: %s" % (e))
 
-		serial = bna.normalizeSerial(serial)
-		secret = hexlify(secret).decode("ascii")
+        serial = bna.normalizeSerial(serial)
+        secret = hexlify(secret).decode("ascii")
 
-		self.addSerial(serial, secret)
+        self.addSerial(serial, secret)
 
-		print("Success. Your new serial is: %s" % (bna.prettifySerial(serial)))
+        print("Success. Your new serial is: %s" % (bna.prettifySerial(serial)))
 
-	def printRestoreCode(self, serial):
-		code = bna.getRestoreCode(serial, self._secret)
-		print(code)
+    def printRestoreCode(self, serial):
+        code = bna.getRestoreCode(serial, self._secret)
+        print(code)
 
-	def runLive(self):
-		from time import sleep
-		print("Ctrl-C to exit")
-		while 1:
-			token, timeRemaining = bna.getToken(secret=self._secret)
-			sys.stdout.write("\r%08i" % (token))
-			sys.stdout.flush()
-			sleep(1)
+    def runLive(self):
+        from time import sleep
+        print("Ctrl-C to exit")
+        while 1:
+            token, timeRemaining = bna.getToken(secret=self._secret)
+            sys.stdout.write("\r%08i" % (token))
+            sys.stdout.flush()
+            sleep(1)
 
-	def configFile(self):
-		"""
-		Gets the path to the config file
-		"""
-		if self.args.config:
-			return os.path.expanduser(self.args.config)
+    def configFile(self):
+        """
+        Gets the path to the config file
+        """
+        if self.args.config:
+            return os.path.expanduser(self.args.config)
 
-		def configDir():
-			configdir = "bna"
-			home = os.environ.get("HOME")
-			if os.name == "posix":
-				base = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
-				path = os.path.join(base, configdir)
-			elif os.name == "nt":
-				base = os.environ["APPDATA"]
-				path = os.path.join(base, configdir)
-			else:
-				path = home
+        def configDir():
+            configdir = "bna"
+            home = os.environ.get("HOME")
+            if os.name == "posix":
+                base = os.environ.get("XDG_CONFIG_HOME", os.path.join(home, ".config"))
+                path = os.path.join(base, configdir)
+            elif os.name == "nt":
+                base = os.environ["APPDATA"]
+                path = os.path.join(base, configdir)
+            else:
+                path = home
 
-			if not os.path.exists(path):
-				os.makedirs(path)
-			return path
+            if not os.path.exists(path):
+                os.makedirs(path)
+            return path
 
-		return os.path.join(configDir(), "bna.conf")
+        return os.path.join(configDir(), "bna.conf")
 
-	def getDefaultSerial(self):
-		if not self.config.has_option("bna", "default_serial"):
-			return None
-		return self.config.get("bna", "default_serial")
+    def getDefaultSerial(self):
+        if not self.config.has_option("bna", "default_serial"):
+            return None
+        return self.config.get("bna", "default_serial")
 
-	def setDefaultSerial(self, serial):
-		if not self.config.has_section("bna"):
-			self.config.add_section("bna")
-		self.config.set("bna", "default_serial", serial)
-		self.writeConfig()
+    def setDefaultSerial(self, serial):
+        if not self.config.has_section("bna"):
+            self.config.add_section("bna")
+        self.config.set("bna", "default_serial", serial)
+        self.writeConfig()
 
-	def writeConfig(self):
-		try:
-			with open(self.configFile(), "w") as f:
-				self.config.write(f)
-		except IOError as e:
-			self.error("Could not open %r for writing: %s" % (self.configFile(), e))
+    def writeConfig(self):
+        try:
+            with open(self.configFile(), "w") as f:
+                self.config.write(f)
+        except IOError as e:
+            self.error("Could not open %r for writing: %s" % (self.configFile(), e))
 
-	def getSecret(self, serial):
-		if not self.config.has_section(serial):
-			return None
+    def getSecret(self, serial):
+        if not self.config.has_section(serial):
+            return None
 
-		secret = self.config.get(serial, "secret")
-		return bytearray(secret, "ascii")
+        secret = self.config.get(serial, "secret")
+        return bytearray(secret, "ascii")
 
-	def setSecret(self, serial, secret):
-		if not self.config.has_section(serial):
-			self.config.add_section(serial)
-		self.config.set(serial, "secret", secret)
+    def setSecret(self, serial, secret):
+        if not self.config.has_section(serial):
+            self.config.add_section(serial)
+        self.config.set(serial, "secret", secret)
 
-		self.writeConfig()
+        self.writeConfig()
 
 def main():
-	import signal
-	signal.signal(signal.SIGINT, signal.SIG_DFL)
-	authenticator = Authenticator(sys.argv[1:])
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    authenticator = Authenticator(sys.argv[1:])
 
 if __name__ == "__main__":
-	main()
+    main()
